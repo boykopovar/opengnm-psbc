@@ -17,7 +17,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include <pthread.h>
+#include "util/simple_mtx.h"
+#include "util/u_call_once.h"
 
 #include <pssl_types.h>
 
@@ -220,22 +221,22 @@ static mesa_shader_stage psbc_to_mesa_stage(PsbcStage s) {
 /* === Init/shutdown (refcounted) === */
 
 static int g_init_refcount = 0;
-static pthread_mutex_t g_init_mutex = PTHREAD_MUTEX_INITIALIZER;
+static simple_mtx_t g_init_mutex = SIMPLE_MTX_INITIALIZER;
 
 void psbc_init(void) {
-    pthread_mutex_lock(&g_init_mutex);
+    simple_mtx_lock(&g_init_mutex);
     if (g_init_refcount++ == 0) {
         glsl_type_singleton_init_or_ref();
     }
-    pthread_mutex_unlock(&g_init_mutex);
+    simple_mtx_unlock(&g_init_mutex);
 }
 
 void psbc_shutdown(void) {
-    pthread_mutex_lock(&g_init_mutex);
+    simple_mtx_lock(&g_init_mutex);
     if (g_init_refcount > 0 && --g_init_refcount == 0) {
         glsl_type_singleton_decref();
     }
-    pthread_mutex_unlock(&g_init_mutex);
+    simple_mtx_unlock(&g_init_mutex);
 }
 
 /* === PSSL/GNM type mapping === */
@@ -2322,7 +2323,7 @@ static void setup_target(PsbcTarget target,
     }
 }
 
-static pthread_once_t g_ps5_nir_options_once = PTHREAD_ONCE_INIT;
+static util_once_flag g_ps5_nir_options_once = UTIL_ONCE_FLAG_INIT;
 static struct ac_compiler_info g_ps5_nir_ac_info;
 static struct radv_compiler_info g_ps5_nir_compiler_info;
 
@@ -2344,7 +2345,7 @@ psbc_get_nir_options(PsbcStage stage) {
     if (mesa_stage == MESA_SHADER_NONE ||
         mesa_stage >= MESA_VULKAN_SHADER_STAGES)
         return NULL;
-    pthread_once(&g_ps5_nir_options_once, init_ps5_nir_options);
+    util_call_once(&g_ps5_nir_options_once, init_ps5_nir_options);
     return &g_ps5_nir_compiler_info.nir_options[mesa_stage];
 }
 
