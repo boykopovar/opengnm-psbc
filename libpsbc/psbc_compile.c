@@ -2665,7 +2665,7 @@ static PsbcResult psbc_compile_impl(
         return PSBC_RESULT_INTERNAL_ERROR;
 
     memset(out, 0, sizeof(*out));
-    if (opts->dynamic_vertex_input && (opts->target != PSBC_TARGET_PS5 || opts->stage != PSBC_STAGE_VERTEX || opts->vertex_attribute_count != 0))
+    if (opts->dynamic_vertex_input && (opts->target != PSBC_TARGET_PS5 || (opts->stage != PSBC_STAGE_VERTEX && (opts->stage != PSBC_STAGE_GEOMETRY || (!previous_spirv && !previous_input_nir) || next_link_spirv)) || opts->vertex_attribute_count != 0))
         return PSBC_RESULT_INTERNAL_ERROR;
     if ((opts->enable_uniform_and_storage_buffer_8bit_access &&
          !opts->enable_storage_buffer_8bit_access) ||
@@ -2901,22 +2901,6 @@ static PsbcResult psbc_compile_impl(
         psbc_shutdown();
         return PSBC_RESULT_COMPILE_NIR;
     }
-    if (opts->dynamic_vertex_input) {
-        nir_foreach_function_impl(impl, nir) {
-            nir_foreach_block(block, impl) {
-                nir_foreach_instr(instruction, block) {
-                    if (instruction->type != nir_instr_type_intrinsic) continue;
-                    nir_intrinsic_instr* intrinsic = nir_instr_as_intrinsic(instruction);
-                    if (intrinsic->intrinsic != nir_intrinsic_load_input) continue;
-                    if (intrinsic->def.bit_size > 32 || !nir_src_is_const(*nir_get_io_offset_src(intrinsic)) || nir_intrinsic_component(intrinsic) + intrinsic->def.num_components > 4) {
-                        ralloc_free(nir);
-                        psbc_shutdown();
-                        return PSBC_RESULT_UNSUPPORTED_CAPABILITY;
-                    }
-                }
-            }
-        }
-    }
     debug_stage(input_nir ? "import-nir-end" : "import-spirv-end");
     debug_shader_io(input_nir ? "input-NIR" : "SPIR-V", nir, NULL);
     debug_shader_io("lowered-io", nir, NULL);
@@ -2953,6 +2937,24 @@ static PsbcResult psbc_compile_impl(
         debug_shader_io(previous_input_nir ? "previous-NIR" :
                                                "previous-SPIR-V",
                         previous_nir, NULL);
+    }
+    if (opts->dynamic_vertex_input) {
+        nir_shader* vertex_nir = paired_geometry ? previous_nir : nir;
+        nir_foreach_function_impl(impl, vertex_nir) {
+            nir_foreach_block(block, impl) {
+                nir_foreach_instr(instruction, block) {
+                    if (instruction->type != nir_instr_type_intrinsic) continue;
+                    nir_intrinsic_instr* intrinsic = nir_instr_as_intrinsic(instruction);
+                    if (intrinsic->intrinsic != nir_intrinsic_load_input) continue;
+                    if (intrinsic->def.bit_size > 32 || !nir_src_is_const(*nir_get_io_offset_src(intrinsic)) || nir_intrinsic_component(intrinsic) + intrinsic->def.num_components > 4) {
+                        ralloc_free(previous_nir);
+                        ralloc_free(nir);
+                        psbc_shutdown();
+                        return PSBC_RESULT_UNSUPPORTED_CAPABILITY;
+                    }
+                }
+            }
+        }
     }
     /* The link-only evaluation half of a hull pair.
      *

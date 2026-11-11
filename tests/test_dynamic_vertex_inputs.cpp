@@ -7,15 +7,22 @@
 
 static_assert(sizeof(PsbcDynamicVertexInput) == 32);
 
-int main(int argc, char** argv)
+static std::vector<std::uint32_t> ReadSpirv(const char* path)
 {
-    if (argc != 2) throw std::invalid_argument("Expected dynamic vertex SPIR-V fixture");
-    std::ifstream input(argv[1], std::ios::binary | std::ios::ate);
+    std::ifstream input(path, std::ios::binary | std::ios::ate);
     const auto size = input.tellg();
     if (!input || size < 20 || size % 4) throw std::runtime_error("Invalid SPIR-V file");
     std::vector<std::uint32_t> words(static_cast<std::size_t>(size) / 4);
     input.seekg(0);
     if (!input.read(reinterpret_cast<char*>(words.data()), size)) throw std::runtime_error("Cannot read SPIR-V");
+    return words;
+}
+
+int main(int argc, char** argv)
+{
+    if (argc != 3) throw std::invalid_argument("Expected vertex and geometry SPIR-V fixtures");
+    const auto words = ReadSpirv(argv[1]);
+    const auto geometry = ReadSpirv(argv[2]);
     PsbcCompileOptions options{};
     options.target = PSBC_TARGET_PS5;
     options.stage = PSBC_STAGE_VERTEX;
@@ -42,6 +49,14 @@ int main(int argc, char** argv)
         if (psbc_compile_shader(words.data(), words.size() * 4, &invalid, &output) == PSBC_RESULT_OK) throw std::runtime_error("Invalid dynamic vertex configuration was accepted");
         if (output.data || output.machine_code || output.size || output.machine_code_size) throw std::runtime_error("Failed compile returned shader storage");
     }
+    options.stage = PSBC_STAGE_GEOMETRY;
+    if (psbc_compile_shader(geometry.data(), geometry.size() * 4, &options, &output) == PSBC_RESULT_OK) throw std::runtime_error("Unpaired dynamic geometry was accepted");
+    if (psbc_compile_geometry_pipeline(words.data(), words.size() * 4, geometry.data(), geometry.size() * 4, &options, &output) != PSBC_RESULT_OK) throw std::runtime_error("Dynamic geometry compilation failed");
+    const auto geometryMetadata = output.metadata;
+    if (!output.machine_code || !output.machine_code_size) throw std::runtime_error("Geometry code is empty");
+    psbc_free_output(&output);
+    if (!geometryMetadata.merged_geometry || geometryMetadata.source_stage != PSBC_STAGE_GEOMETRY || geometryMetadata.merged_es_source_stage != PSBC_STAGE_VERTEX || !geometryMetadata.dynamic_vertex_input || geometryMetadata.vertex_buffer_descriptor_stride != 32 || geometryMetadata.vertex_buffer_usage_mask != 3 || !geometryMetadata.vertex_buffer_per_attribute || !geometryMetadata.base_vertex_valid || !geometryMetadata.start_instance_valid) throw std::runtime_error("Unexpected dynamic geometry ABI");
+    options.stage = PSBC_STAGE_VERTEX;
     options.dynamic_vertex_input = false;
     options.vertex_attribute_count = 2;
     options.vertex_attributes[0] = {.location = 0, .binding = 0, .format = PSBC_VERTEX_FORMAT_R32G32B32_FLOAT, .offset = 0, .stride = 12, .alignment = 4, .instance_divisor = 0};

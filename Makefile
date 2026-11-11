@@ -27,7 +27,8 @@ all: $(PSBC)
 test-dynamic-vertex-inputs: $(LIBPSBC)
 	$(DXC) -spirv -fspv-target-env=vulkan1.1 -WX -T vs_6_2 -E main tests/dynamic-vertex-inputs.vert.hlsl -Fo tests/dynamic-vertex-inputs.spv
 	$(CXX) -std=c++20 -Wall -Wextra -Wpedantic -Werror -Ilibpsbc tests/test_dynamic_vertex_inputs.cpp $(LIBPSBC) -lm -lpthread -o tests/test_dynamic_vertex_inputs
-	./tests/test_dynamic_vertex_inputs tests/dynamic-vertex-inputs.spv
+	$(DXC) -spirv -fspv-target-env=vulkan1.1 -WX -T gs_6_2 -E main tests/dynamic-vertex-inputs.geom.hlsl -Fo tests/dynamic-geometry-inputs.spv
+	./tests/test_dynamic_vertex_inputs tests/dynamic-vertex-inputs.spv tests/dynamic-geometry-inputs.spv
 
 .PHONY: test-fragment-input-bases
 test-fragment-input-bases: $(LIBPSBC)
