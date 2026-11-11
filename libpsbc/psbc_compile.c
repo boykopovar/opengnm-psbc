@@ -948,11 +948,6 @@ static void fill_shader_metadata(const BuildContext* ctx,
     metadata->cull_distance_mask = ctx->rinfo->outinfo.cull_dist_mask;
     metadata->address32_hi = ctx->address32_hi;
     metadata->user_sgpr_count = ctx->rargs->num_user_sgprs;
-    if (ctx->rinfo->vs.has_prolog && ctx->rargs->prolog_inputs.used) {
-        metadata->vertex_prolog_valid = true;
-        metadata->vertex_prolog_inputs_user_data_dword = ctx->rargs->user_sgprs_locs.shader_data[AC_UD_VS_PROLOG_INPUTS].sgpr_idx;
-        metadata->vertex_prolog_attribute_count = ctx->rinfo->vs.num_attributes;
-    }
     metadata->hull_push_use_valid = ctx->hull_push_use_valid;
     metadata->push_use_valid = ctx->push_use_valid;
     metadata->stage_push_dwords = ctx->stage_push_dwords;
@@ -1008,6 +1003,8 @@ static void fill_shader_metadata(const BuildContext* ctx,
         metadata->vertex_buffer_table_valid = true;
         metadata->vertex_buffer_usage_mask = ctx->rinfo->vs.vb_desc_usage_mask;
         metadata->vertex_buffer_per_attribute = ctx->rinfo->vs.use_per_attribute_vb_descs;
+        metadata->dynamic_vertex_input = ctx->options->dynamic_vertex_input;
+        metadata->vertex_buffer_descriptor_stride = metadata->dynamic_vertex_input ? sizeof(PsbcDynamicVertexInput) : 16;
         metadata->vertex_buffer_table_user_data_dword =
             ctx->rargs->user_sgprs_locs
                 .shader_data[AC_UD_VS_VERTEX_BUFFERS].sgpr_idx;
@@ -2903,6 +2900,22 @@ static PsbcResult psbc_compile_impl(
         psbc_shutdown();
         return PSBC_RESULT_COMPILE_NIR;
     }
+    if (opts->dynamic_vertex_input) {
+        nir_foreach_function_impl(impl, nir) {
+            nir_foreach_block(block, impl) {
+                nir_foreach_instr(instruction, block) {
+                    if (instruction->type != nir_instr_type_intrinsic) continue;
+                    nir_intrinsic_instr* intrinsic = nir_instr_as_intrinsic(instruction);
+                    if (intrinsic->intrinsic != nir_intrinsic_load_input) continue;
+                    if (intrinsic->def.bit_size > 32 || !nir_src_is_const(*nir_get_io_offset_src(intrinsic)) || nir_intrinsic_component(intrinsic) + intrinsic->def.num_components > 4) {
+                        ralloc_free(nir);
+                        psbc_shutdown();
+                        return PSBC_RESULT_UNSUPPORTED_CAPABILITY;
+                    }
+                }
+            }
+        }
+    }
     debug_stage(input_nir ? "import-nir-end" : "import-spirv-end");
     debug_shader_io(input_nir ? "input-NIR" : "SPIR-V", nir, NULL);
     debug_shader_io("lowered-io", nir, NULL);
@@ -3289,7 +3302,7 @@ static PsbcResult psbc_compile_impl(
         gfx_state.ps.epilog.color_is_int10 = opts->spi_shader_col_format
             ? (opts->color_is_int10 & 1) * 3 : 0;
     }
-    gfx_state.vs.has_prolog = opts->dynamic_vertex_input;
+    gfx_state.vs.dynamic_vertex_input = opts->dynamic_vertex_input;
     for (uint32_t i = 0; i < opts->vertex_attribute_count; ++i) {
         const PsbcVertexAttribute* attribute = &opts->vertex_attributes[i];
         enum pipe_format format = PIPE_FORMAT_NONE;

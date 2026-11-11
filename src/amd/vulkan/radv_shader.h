@@ -186,6 +186,7 @@ struct radv_graphics_state_key {
 
    struct vs {
       bool has_prolog;
+      bool dynamic_vertex_input;
    } vs;
 
    struct {

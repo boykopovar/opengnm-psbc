@@ -34,7 +34,7 @@ static bool
 radv_use_per_attribute_vb_descs(const nir_shader *nir, const struct radv_graphics_state_key *gfx_state,
                                 const struct radv_shader_stage_key *stage_key)
 {
-   return stage_key->vertex_robustness1 || radv_use_vs_prolog(nir, gfx_state);
+   return stage_key->vertex_robustness1 || gfx_state->vs.dynamic_vertex_input || radv_use_vs_prolog(nir, gfx_state);
 }
 
 static void
@@ -545,6 +545,10 @@ gather_shader_info_vs(const struct radv_compiler_info *compiler_info, const nir_
    if (radv_use_vs_prolog(nir, gfx_state)) {
       info->vs.has_prolog = true;
       info->vs.dynamic_inputs = true;
+   }
+   if (gfx_state->vs.dynamic_vertex_input && nir->info.inputs_read) {
+      info->vs.needs_instance_id = true;
+      info->vs.needs_base_instance = true;
    }
 
    info->gs_inputs_read = ~0ULL;

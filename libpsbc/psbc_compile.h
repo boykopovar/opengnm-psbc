@@ -153,6 +153,13 @@ typedef struct {
     uint32_t         instance_divisor;
 } PsbcVertexAttribute;
 
+typedef struct {
+    uint32_t descriptor[4];
+    uint32_t instance_divisor;
+    uint32_t instance_rate;
+    uint32_t reserved[2];
+} PsbcDynamicVertexInput;
+
 typedef enum {
     PSBC_DESCRIPTOR_NONE = 0,
     PSBC_DESCRIPTOR_UNIFORM_BUFFER,
@@ -436,9 +443,8 @@ typedef struct {
      * Both fields are zero when vertex_buffer_table_valid is false. */
     uint32_t             vertex_buffer_usage_mask;
     bool                 vertex_buffer_per_attribute;
-    bool vertex_prolog_valid;
-    uint32_t vertex_prolog_inputs_user_data_dword;
-    uint32_t vertex_prolog_attribute_count;
+    bool dynamic_vertex_input;
+    uint32_t vertex_buffer_descriptor_stride;
 } PsbcShaderMetadata;
 
 typedef struct {

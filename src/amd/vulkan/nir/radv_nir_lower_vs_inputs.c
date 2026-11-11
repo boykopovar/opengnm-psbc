@@ -427,6 +427,38 @@ lower_load_vs_input(nir_builder *b, nir_intrinsic_instr *intrin, lower_vs_inputs
    return nir_vec(b, channels, dest_num_components);
 }
 
+static nir_def *
+lower_dynamic_vs_input(nir_builder *b, nir_intrinsic_instr *intrin, lower_vs_inputs_state *s)
+{
+   const unsigned location = nir_intrinsic_io_semantics(intrin).location + nir_src_as_uint(*nir_get_io_offset_src(intrin)) - VERT_ATTRIB_GENERIC0;
+   const unsigned index = util_bitcount(s->info->vs.vb_desc_usage_mask & BITFIELD_MASK(location));
+   nir_def *address = ac_nir_load_arg(b, &s->args->ac, s->args->ac.vertex_buffers);
+   nir_def *table = nir_pack_64_2x32_split(b, address, nir_imm_int(b, s->compiler_info->hw.address32_hi));
+   nir_def *descriptor = ac_nir_load_smem(b, 4, table, nir_imm_int(b, index * 32), 4, ACCESS_CAN_SPECULATE);
+   nir_def *rate = ac_nir_load_smem(b, 2, table, nir_imm_int(b, index * 32 + 16), 4, ACCESS_CAN_SPECULATE);
+   nir_def *divisor = nir_channel(b, rate, 0);
+   nir_push_if(b, nir_ine_imm(b, nir_channel(b, rate, 1), 0));
+   nir_push_if(b, nir_ugt_imm(b, divisor, 1));
+   nir_def *quotient = nir_udiv(b, nir_load_instance_id(b), divisor);
+   nir_push_else(b, NULL);
+   nir_def *unit = nir_bcsel(b, nir_ieq_imm(b, divisor, 0), nir_imm_int(b, 0), nir_load_instance_id(b));
+   nir_pop_if(b, NULL);
+   nir_def *step = nir_if_phi(b, quotient, unit);
+   nir_def *instance = nir_iadd(b, nir_load_base_instance(b), step);
+   nir_push_else(b, NULL);
+   nir_def *vertex = nir_iadd(b, nir_load_first_vertex(b), nir_load_vertex_id_zero_base(b));
+   nir_pop_if(b, NULL);
+   nir_def *element = nir_if_phi(b, instance, vertex);
+   nir_def *zero = nir_imm_int(b, 0);
+   nir_def *value = nir_load_buffer_amd(b, 4, 32, descriptor, zero, zero, element, .memory_modes = nir_var_shader_in, .align_mul = 4, .access = ACCESS_CAN_REORDER | ACCESS_CAN_SPECULATE | ACCESS_USES_FORMAT_AMD);
+   value = nir_channels(b, value, BITFIELD_RANGE(nir_intrinsic_component(intrin), intrin->def.num_components));
+   if (intrin->def.bit_size == 16) {
+      if (nir_alu_type_get_base_type(nir_intrinsic_dest_type(intrin)) == nir_type_float) return nir_f2f16(b, value);
+      return nir_u2u16(b, value);
+   }
+   return value;
+}
+
 static bool
 lower_vs_input_instr(nir_builder *b, nir_intrinsic_instr *intrin, void *state)
 {
@@ -439,7 +471,9 @@ lower_vs_input_instr(nir_builder *b, nir_intrinsic_instr *intrin, void *state)
 
    nir_def *replacement = NULL;
 
-   if (s->info->vs.dynamic_inputs) {
+   if (s->gfx_state->vs.dynamic_vertex_input) {
+      replacement = lower_dynamic_vs_input(b, intrin, s);
+   } else if (s->info->vs.dynamic_inputs) {
       replacement = lower_load_vs_input_from_prolog(b, intrin, s);
    } else {
       replacement = lower_load_vs_input(b, intrin, s);
@@ -464,7 +498,7 @@ radv_nir_lower_vs_inputs(nir_shader *shader, const struct radv_compiler_info *co
       .compiler_info = compiler_info,
    };
 
-   return nir_shader_intrinsics_pass(shader, lower_vs_input_instr, nir_metadata_control_flow, &state);
+   return nir_shader_intrinsics_pass(shader, lower_vs_input_instr, gfx_state->vs.dynamic_vertex_input ? nir_metadata_none : nir_metadata_control_flow, &state);
 }
 
 static void
@@ -526,5 +560,6 @@ bool
 radv_nir_optimize_vs_inputs_to_const(nir_shader *shader, const struct radv_graphics_state_key *gfx_state)
 {
    assert(shader->info.stage == MESA_SHADER_VERTEX);
+   if (gfx_state->vs.dynamic_vertex_input) return false;
    return nir_shader_intrinsics_pass(shader, opt_vs_input_to_const, nir_metadata_control_flow, (void *)gfx_state);
 }

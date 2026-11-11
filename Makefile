@@ -23,11 +23,11 @@ DXC ?= dxc
 
 all: $(PSBC)
 
-.PHONY: test-vertex-prolog
-test-vertex-prolog: $(LIBPSBC)
-	$(DXC) -spirv -fspv-target-env=vulkan1.1 -WX -T vs_6_2 -E main tests/vertex-prolog.vert.hlsl -Fo tests/vertex-prolog.spv
-	$(CXX) -std=c++20 -Wall -Wextra -Wpedantic -Werror -Ilibpsbc tests/test_vertex_prolog.cpp $(LIBPSBC) -lm -lpthread -o tests/test_vertex_prolog
-	./tests/test_vertex_prolog tests/vertex-prolog.spv
+.PHONY: test-dynamic-vertex-inputs
+test-dynamic-vertex-inputs: $(LIBPSBC)
+	$(DXC) -spirv -fspv-target-env=vulkan1.1 -WX -T vs_6_2 -E main tests/dynamic-vertex-inputs.vert.hlsl -Fo tests/dynamic-vertex-inputs.spv
+	$(CXX) -std=c++20 -Wall -Wextra -Wpedantic -Werror -Ilibpsbc tests/test_dynamic_vertex_inputs.cpp $(LIBPSBC) -lm -lpthread -o tests/test_dynamic_vertex_inputs
+	./tests/test_dynamic_vertex_inputs tests/dynamic-vertex-inputs.spv
 
 .PHONY: test-fragment-input-bases
 test-fragment-input-bases: $(LIBPSBC)
