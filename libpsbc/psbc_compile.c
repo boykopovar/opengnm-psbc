@@ -948,6 +948,11 @@ static void fill_shader_metadata(const BuildContext* ctx,
     metadata->cull_distance_mask = ctx->rinfo->outinfo.cull_dist_mask;
     metadata->address32_hi = ctx->address32_hi;
     metadata->user_sgpr_count = ctx->rargs->num_user_sgprs;
+    if (ctx->rinfo->vs.has_prolog && ctx->rargs->prolog_inputs.used) {
+        metadata->vertex_prolog_valid = true;
+        metadata->vertex_prolog_inputs_user_data_dword = ctx->rargs->user_sgprs_locs.shader_data[AC_UD_VS_PROLOG_INPUTS].sgpr_idx;
+        metadata->vertex_prolog_attribute_count = ctx->rinfo->vs.num_attributes;
+    }
     metadata->hull_push_use_valid = ctx->hull_push_use_valid;
     metadata->push_use_valid = ctx->push_use_valid;
     metadata->stage_push_dwords = ctx->stage_push_dwords;
@@ -2662,6 +2667,8 @@ static PsbcResult psbc_compile_impl(
         return PSBC_RESULT_INTERNAL_ERROR;
 
     memset(out, 0, sizeof(*out));
+    if (opts->dynamic_vertex_input && (opts->target != PSBC_TARGET_PS5 || opts->stage != PSBC_STAGE_VERTEX || opts->vertex_attribute_count != 0))
+        return PSBC_RESULT_INTERNAL_ERROR;
     if ((opts->enable_uniform_and_storage_buffer_8bit_access &&
          !opts->enable_storage_buffer_8bit_access) ||
         (opts->enable_uniform_and_storage_buffer_16bit_access &&
@@ -3282,6 +3289,7 @@ static PsbcResult psbc_compile_impl(
         gfx_state.ps.epilog.color_is_int10 = opts->spi_shader_col_format
             ? (opts->color_is_int10 & 1) * 3 : 0;
     }
+    gfx_state.vs.has_prolog = opts->dynamic_vertex_input;
     for (uint32_t i = 0; i < opts->vertex_attribute_count; ++i) {
         const PsbcVertexAttribute* attribute = &opts->vertex_attributes[i];
         enum pipe_format format = PIPE_FORMAT_NONE;

@@ -25,7 +25,7 @@ extern "C" {
  * cached a program against version 16 must not interpret those fields with the
  * new layout, so the version and the driver's cache key move together. */
 /* 21: merged ES source identity distinguishes vertex-fed GS from TES-fed GS. */
-#define PSBC_SHADER_METADATA_VERSION 21u
+#define PSBC_SHADER_METADATA_VERSION 22u
 
 struct nir_shader;
 struct nir_shader_compiler_options;
@@ -436,6 +436,9 @@ typedef struct {
      * Both fields are zero when vertex_buffer_table_valid is false. */
     uint32_t             vertex_buffer_usage_mask;
     bool                 vertex_buffer_per_attribute;
+    bool vertex_prolog_valid;
+    uint32_t vertex_prolog_inputs_user_data_dword;
+    uint32_t vertex_prolog_attribute_count;
 } PsbcShaderMetadata;
 
 typedef struct {
@@ -462,6 +465,7 @@ typedef struct {
     bool        provoking_vtx_last; /* Select the final flat-shaded vertex */
     uint32_t    address32_hi; /* Upper half for ACO 32-bit GPU pointers */
     uint32_t    vertex_attribute_count;
+    bool dynamic_vertex_input;
     PsbcVertexAttribute vertex_attributes[PSBC_MAX_VERTEX_ATTRIBUTES];
     uint32_t    descriptor_binding_count;
     PsbcDescriptorBinding descriptor_bindings[PSBC_MAX_DESCRIPTOR_BINDINGS];
