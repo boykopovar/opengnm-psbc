@@ -31,6 +31,11 @@ load_ring(nir_builder *b, unsigned ring, lower_abi_state *s)
    struct ac_arg arg =
       b->shader->info.stage == MESA_SHADER_TASK ? s->args->task_ring_offsets : s->args->ac.ring_offsets;
 
+   /* PS5: the ring descriptor table arrives as user data, because the
+    * system-block ring_offsets at s0/s1 is not writable on that platform. */
+   if (s->args->ps5_ring_table.used)
+      arg = s->args->ps5_ring_table;
+
    nir_def *ring_offsets = ac_nir_load_arg(b, &s->args->ac, arg);
    ring_offsets = nir_pack_64_2x32_split(b, nir_channel(b, ring_offsets, 0), nir_channel(b, ring_offsets, 1));
    return ac_nir_load_smem(b, 4, ring_offsets, nir_imm_int(b, ring * 16u), 4, ACCESS_CAN_SPECULATE);
@@ -225,7 +230,12 @@ lower_abi_instr(nir_builder *b, nir_intrinsic_instr *intrin, void *state)
          replacement = nir_imm_int(b, get_tcs_input_vertex_stride(s->info->vs.num_linked_outputs));
       } else {
          assert(stage == MESA_SHADER_TESS_CTRL);
-         if (s->info->inputs_linked) {
+         /* PS5's merged static LS/HS program has a known input layout even
+          * when it retains the unlinked location mapping. Its native ABI does
+          * not supply RADV's dynamic tcs_offchip_layout argument. Use that
+          * known stride, as LS does, instead of reading an undefined SGPR. */
+         if (s->info->inputs_linked ||
+             (s->args->ps5_ring_table.used && s->gfx_state->ts.patch_control_points)) {
             replacement = nir_imm_int(b, get_tcs_input_vertex_stride(s->info->tcs.num_linked_inputs));
          } else {
             nir_def *num_ls_out = GET_SGPR_FIELD_NIR(s->args->ac.tcs_offchip_layout, TCS_OFFCHIP_LAYOUT_NUM_LS_OUTPUTS);

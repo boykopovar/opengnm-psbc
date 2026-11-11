@@ -15,11 +15,170 @@ include $(CONFIG)
 
 PSBC ?= opengnm-psbc
 LIBPSBC ?= libpsbc.a
+GLSLANG ?= glslangValidator
 
-.PHONY: all clean install generated libpsbc
+.PHONY: all clean install generated libpsbc test-runtime-parameters test-storage-widths test-core-vertex-formats test-subgroup-id
 .DEFAULT_GOAL := all
 
 all: $(PSBC)
+
+.PHONY: test-fragment-input-bases
+test-fragment-input-bases: $(LIBPSBC)
+	$(GLSLANG) -V --target-env vulkan1.0 tests/fragment-input-bases.frag -o tests/fragment-input-bases.spv
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ilibpsbc tests/test_fragment_input_bases.c $(LIBPSBC) -lstdc++ -lm -lpthread -o tests/test_fragment_input_bases
+	./tests/test_fragment_input_bases tests/fragment-input-bases.spv
+
+.PHONY: test-vertex-bindings
+test-vertex-bindings: $(LIBPSBC)
+	$(GLSLANG) -V --target-env vulkan1.0 tests/vertex-bindings.vert -o tests/vertex-bindings.spv
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ilibpsbc tests/test_vertex_bindings.c $(LIBPSBC) -lstdc++ -lm -lpthread -o tests/test_vertex_bindings
+	./tests/test_vertex_bindings tests/vertex-bindings.spv
+
+test-runtime-parameters: $(LIBPSBC)
+	$(GLSLANG) -V --target-env vulkan1.0 tests/runtime_parameters.comp -o tests/runtime_parameters.spv
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ilibpsbc tests/test_runtime_parameters.c $(LIBPSBC) -lstdc++ -lm -lpthread -o tests/test_runtime_parameters
+	./tests/test_runtime_parameters tests/runtime_parameters.spv
+
+test-subgroup-id: $(LIBPSBC)
+	$(GLSLANG) -V --target-env vulkan1.2 -DLOCAL_X=64 -DLOCAL_Y=1 -DLOCAL_Z=1 tests/subgroup-id.comp -o tests/subgroup-id-1d.spv
+	$(GLSLANG) -V --target-env vulkan1.2 -DLOCAL_X=8 -DLOCAL_Y=8 -DLOCAL_Z=1 tests/subgroup-id.comp -o tests/subgroup-id-2d.spv
+	$(GLSLANG) -V --target-env vulkan1.2 -DLOCAL_X=4 -DLOCAL_Y=4 -DLOCAL_Z=4 tests/subgroup-id.comp -o tests/subgroup-id-3d.spv
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ilibpsbc tests/test_subgroup_id.c $(LIBPSBC) -lstdc++ -lm -lpthread -o tests/test_subgroup_id
+	PSBC_DEBUG_NIR=1 ./tests/test_subgroup_id tests/subgroup-id-1d.spv tests/subgroup-id-2d.spv tests/subgroup-id-3d.spv 2>tests/subgroup-id.nir.log
+	$(PYTHON) -c 'from pathlib import Path; s=Path("tests/subgroup-id.nir.log").read_text(); blocks=s.split("shader: MESA_SHADER_COMPUTE")[1:]; assert len(blocks)==3; assert all("api_subgroup_size: 32" in b and "@load_vector_arg_amd" in b and "ushr" in b and "load_subgroup_id" not in b for b in blocks)'
+	$(GLSLANG) -V --target-env vulkan1.1 -DLOCAL_X=16 -DLOCAL_Y=4 tests/local-index.comp -o tests/local-index-2d.spv
+	$(GLSLANG) -V --target-env vulkan1.1 -DLOCAL_X=96 -DLOCAL_Y=1 tests/local-index.comp -o tests/local-index-1d.spv
+	PSBC_DEBUG_NIR=1 ./tests/test_subgroup_id tests/local-index-2d.spv tests/local-index-1d.spv tests/local-index-2d.spv 2>tests/local-index.nir.log
+	$(PYTHON) -c 'from pathlib import Path; s=Path("tests/local-index.nir.log").read_text(); blocks=s.split("shader: MESA_SHADER_COMPUTE")[1:]; assert len(blocks)==3; import re; assert all(len(set(re.findall("load_scalar_arg_amd [(]base=([0-9]+)", b))) == 1 and "load_num_subgroups" not in b and "load_local_invocation_index" not in b for b in blocks), "compute index or wave count reads a scalar argument (TG_SIZE)"'
+
+test-storage-widths: $(LIBPSBC)
+	# Vulkan 1.1 makes the StorageBuffer storage class core, which lets this
+	# source isolate StorageBuffer8BitAccess instead of the broader legacy
+	# UniformAndStorageBuffer8BitAccess capability emitted for Vulkan 1.0 GLSL.
+	$(GLSLANG) -V --target-env vulkan1.1 tests/storage8.comp -o tests/storage8.spv
+	$(GLSLANG) -V --target-env vulkan1.0 tests/storage16.comp -o tests/storage16.spv
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ilibpsbc tests/test_storage_widths.c $(LIBPSBC) -lstdc++ -lm -lpthread -o tests/test_storage_widths
+	./tests/test_storage_widths
+
+.PHONY: test-aco-arena
+test-aco-arena:
+	$(CXX) -std=c++17 -O1 -g -DUTIL_ARCH_LITTLE_ENDIAN=1 -DUTIL_ARCH_BIG_ENDIAN=0 -Iinclude -Iinclude/mesa -Isrc -Isrc/amd/compiler -Isrc/amd/common -Isrc/compiler -Isrc/util tests/test_aco_arena.cpp -ldl -o tests/test_aco_arena
+	./tests/test_aco_arena
+
+.PHONY: test-t08-capabilities
+test-t08-capabilities: $(LIBPSBC)
+	mkdir -p build
+	$(GLSLANG) -V --target-env vulkan1.1 tests/t08_address.comp -o tests/t08_address.comp.spv
+	$(GLSLANG) -V --target-env vulkan1.1 tests/t08_memory_model_queue.comp -o tests/t08_memory_model_queue.comp.spv
+	$(GLSLANG) -V --target-env vulkan1.1 tests/t08_memory_model.comp -o tests/t08_memory_model.comp.spv
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ilibpsbc tests/test_t08_capabilities.c $(LIBPSBC) -lstdc++ -lm -lpthread -o build/test_t08_capabilities
+	PSBC_DEBUG_NIR=1 ./build/test_t08_capabilities 2>build/t08_capabilities.nir.log
+	$(PYTHON) tests/verify_t08_nir.py build/t08_capabilities.nir.log
+
+.PHONY: test-draw-id
+test-draw-id: $(LIBPSBC)
+	# DrawIndex is a Vulkan 1.1 feature; the positive source reads it and the
+	# negative source (tri.vert) does not, so the two runs pin the slot's
+	# presence and its absence from the same options.
+	$(GLSLANG) -V --target-env vulkan1.1 tests/draw-id.vert -o tests/draw-id.spv
+	$(GLSLANG) -V --target-env vulkan1.0 tests/tri.vert -o tests/tri.spv
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ilibpsbc tests/test_draw_id.c $(LIBPSBC) -lstdc++ -lm -lpthread -o tests/test_draw_id
+	./tests/test_draw_id
+
+.PHONY: test-view-index
+test-view-index: $(LIBPSBC)
+	# ViewIndex is the multiview built-in; the positive source reads it and the
+	# negative source (tri.vert) does not, so the two runs pin the slot's
+	# presence and absence in both vertex and fragment stages.
+	$(GLSLANG) -V --target-env vulkan1.1 tests/view-index.vert -o tests/view-index.spv
+	$(GLSLANG) -V --target-env vulkan1.0 tests/tri.vert -o tests/tri.spv
+	$(GLSLANG) -V --target-env vulkan1.1 tests/view-index.frag -o tests/view-index.frag.spv
+	$(GLSLANG) -V --target-env vulkan1.0 tests/tri.frag -o tests/tri.frag.spv
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ilibpsbc tests/test_view_index.c $(LIBPSBC) -lstdc++ -lm -lpthread -o tests/test_view_index
+	./tests/test_view_index
+	PSBC_DEBUG_NIR=1 ./tests/test_view_index 2>tests/view-index.nir.log
+	$(PYTHON) -c 'from pathlib import Path; fs=Path("tests/view-index.nir.log").read_text().split("shader: MESA_SHADER_FRAGMENT")[1]; assert "arg_upper_bound_u32_amd=31" in fs, "fragment ViewIndex must preserve views above one"'
+
+.PHONY: test-descriptor-static-use
+test-descriptor-static-use: $(LIBPSBC)
+	$(GLSLANG) -V --target-env vulkan1.0 tests/descriptor-static-use.frag -o tests/descriptor-static-use.spv
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ilibpsbc tests/test_descriptor_static_use.c $(LIBPSBC) -lstdc++ -lm -lpthread -o tests/test_descriptor_static_use
+	./tests/test_descriptor_static_use
+
+.PHONY: test-ordered-streamout
+test-ordered-streamout: $(LIBPSBC)
+	$(GLSLANG) -V --target-env vulkan1.0 tests/ordered_streamout.vert -o tests/ordered_streamout.vert.spv
+	$(GLSLANG) -V --target-env vulkan1.0 -S geom tests/ordered_streamout.geom -o tests/ordered_streamout.geom.spv
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ilibpsbc tests/test_ordered_streamout.c $(LIBPSBC) -lstdc++ -lm -lpthread -o tests/test_ordered_streamout
+	PSBC_DEBUG_DISASM=1 ./tests/test_ordered_streamout tests/ordered_streamout.vert.spv tests/ordered_streamout.geom.spv
+
+.PHONY: test-robust-buffer-access2
+test-robust-buffer-access2: $(LIBPSBC)
+	$(GLSLANG) -V --target-env vulkan1.0 tests/robust_buffer_access2.comp -o tests/robust_buffer_access2.spv
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ilibpsbc tests/test_robust_buffer_access2.c $(LIBPSBC) -lstdc++ -lm -lpthread -o tests/test_robust_buffer_access2
+	./tests/test_robust_buffer_access2 tests/robust_buffer_access2.spv
+
+.PHONY: test-storage-image
+test-storage-image: $(LIBPSBC)
+	$(GLSLANG) -V --target-env vulkan1.0 tests/storage_image.comp -o tests/storage_image.spv
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ilibpsbc tests/test_storage_image.c $(LIBPSBC) -lstdc++ -lm -lpthread -o tests/test_storage_image
+	./tests/test_storage_image
+
+.PHONY: test-separate-sampler
+test-separate-sampler: $(LIBPSBC)
+	# DXVK's DXBC form: SAMPLER + SAMPLED_IMAGE combined by OpSampledImage,
+	# plus uniform and storage texel buffers. The NIR must read the S# at
+	# the sampler's own offset and the T#/V# records from their offsets.
+	@mkdir -p build
+	$(GLSLANG) -V --target-env vulkan1.0 tests/separate_sampler.comp -o tests/separate_sampler.comp.spv
+	$(GLSLANG) -V --target-env vulkan1.0 tests/separate_sampler.frag -o tests/separate_sampler.frag.spv
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ilibpsbc tests/test_separate_sampler.c $(LIBPSBC) -lstdc++ -lm -lpthread -o tests/test_separate_sampler
+	PSBC_DEBUG_NIR=1 ./tests/test_separate_sampler tests/separate_sampler.comp.spv tests/separate_sampler.frag.spv 2>build/separate_sampler.nir.log
+	$(PYTHON) tests/verify_separate_sampler_nir.py build/separate_sampler.nir.log
+
+.PHONY: test-tessellation-gap
+test-tessellation-gap: $(LIBPSBC)
+	# The tessellation stages compile to ISA but must report the explicit
+	# pipeline gap rather than an unclassified hardware stage.
+	$(GLSLANG) -V -S tesc --target-env vulkan1.0 tests/test.tesc -o tests/test.tesc.spv
+	$(GLSLANG) -V -S tese --target-env vulkan1.0 tests/test.tese -o tests/test.tese.spv
+	$(GLSLANG) -V --target-env vulkan1.0 tests/tri.vert -o tests/tri.vert.spv
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ilibpsbc tests/test_tessellation_gap.c $(LIBPSBC) -lstdc++ -lm -lpthread -o tests/test_tessellation_gap
+	./tests/test_tessellation_gap tests/test.tesc.spv tests/test.tese.spv tests/tri.vert.spv
+
+.PHONY: test-fragment-distance-reads
+test-fragment-distance-reads: $(LIBPSBC)
+	# The pixel stage reports the distance widths it declares, so a consumer
+	# that cannot route distances to the pixel stage can refuse precisely.
+	$(GLSLANG) -V -S frag --target-env vulkan1.0 tests/fragment-clip-read.frag -o tests/fragment-clip-read.frag.spv
+	$(GLSLANG) -V -S frag --target-env vulkan1.0 tests/fragment-plain.frag -o tests/fragment-plain.frag.spv
+	$(GLSLANG) -V -S frag --target-env vulkan1.0 tests/fragment-clip-read-second.frag -o tests/fragment-clip-read-second.frag.spv
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ilibpsbc tests/test_fragment_distance_reads.c $(LIBPSBC) -lstdc++ -lm -lpthread -o tests/test_fragment_distance_reads
+	./tests/test_fragment_distance_reads tests/fragment-clip-read.frag.spv tests/fragment-plain.frag.spv tests/fragment-clip-read-second.frag.spv
+.PHONY: test-merged-geometry-metadata
+test-merged-geometry-metadata: $(LIBPSBC)
+	# A merged VS+GS pair must be identifiable and must describe its ES half,
+	# while the GE PC-line allocation appears only when the caller supplies the
+	# SA/CU and PC-line facts the compiler cannot derive.
+	$(GLSLANG) -V --target-env vulkan1.0 tests/merged-geometry.vert -o tests/merged-geometry.vert.spv
+	$(GLSLANG) -V -S geom --target-env vulkan1.0 tests/merged-geometry.geom -o tests/merged-geometry.geom.spv
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ilibpsbc tests/test_merged_geometry_metadata.c $(LIBPSBC) -lstdc++ -lm -lpthread -o tests/test_merged_geometry_metadata
+	./tests/test_merged_geometry_metadata tests/merged-geometry.vert.spv tests/merged-geometry.geom.spv
+
+.PHONY: test-viewport-index-metadata
+test-viewport-index-metadata: $(LIBPSBC)
+	# A geometry stage that writes gl_ViewportIndex exports one parameter the
+	# varying loop cannot describe. The semantic list must name it, or the
+	# linkage stays unresolved and a viewport-routing pipeline is refused; the
+	# control stage writes no viewport index and must be unchanged.
+	$(GLSLANG) -V --target-env vulkan1.0 tests/merged-geometry.vert -o tests/merged-geometry.vert.spv
+	$(GLSLANG) -V -S geom --target-env vulkan1.0 tests/viewport-index.geom -o tests/viewport-index.geom.spv
+	$(GLSLANG) -V -S geom --target-env vulkan1.0 tests/merged-geometry.geom -o tests/merged-geometry.geom.spv
+	$(CC) -std=c11 -Wall -Wextra -Werror -Ilibpsbc tests/test_viewport_index_metadata.c $(LIBPSBC) -lstdc++ -lm -lpthread -o tests/test_viewport_index_metadata
+	./tests/test_viewport_index_metadata tests/merged-geometry.vert.spv tests/viewport-index.geom.spv tests/merged-geometry.geom.spv
+
+test-core-vertex-formats: $(PSBC)
+	$(PYTHON) tests/verify_core_vertex_formats.py --psbc ./$(PSBC) --glslang $(GLSLANG)
 
 # === AMD register JSON files (for codegen) ===
 # Include all GPU generations so all register fields are available
@@ -225,17 +384,11 @@ UTIL_SRCS = $(filter-out \
 # Mesa util format sources
 UTIL_FORMAT_SRCS = $(wildcard src/util/format/*.c)
 
-# Blake3 hashing — need dispatch + portable, plus neon on ARM64 hosts
+# Blake3 hashing — portable host implementation.
 BLAKE3_SRCS = \
 	src/util/blake3/blake3.c \
 	src/util/blake3/blake3_dispatch.c \
 	src/util/blake3/blake3_portable.c
-
-# blake3_neon.c needs ARM intrinsics, don't build it on x86
-BLAKE3_HOST_ARCH ?= $(shell uname -m)
-ifneq ($(filter aarch64 arm64 armv8%,$(BLAKE3_HOST_ARCH)),)
-BLAKE3_SRCS += src/util/blake3/blake3_neon.c
-endif
 
 # C11 threads compat (POSIX implementation)
 C11_THREADS_SRCS = src/c11/impl/threads_posix.c src/c11/impl/time.c
@@ -289,6 +442,10 @@ LIBPSBC_OBJS = \
 
 %.cpp.o: %.cpp | $(GENERATED)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+# These two objects share the public metadata ABI.  Keep the thin CLI in
+# lockstep with the library when its layout changes.
+cmd/psbc/main.o libpsbc/psbc_compile.o: libpsbc/psbc_compile.h
 
 ifndef OPENGNM_PSBC_ORBIS
 # === Static library (libpsbc.a) ===

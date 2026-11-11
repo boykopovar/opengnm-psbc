@@ -145,7 +145,12 @@ struct radv_graphics_state_key {
    uint32_t enable_remove_point_size : 1;
    uint32_t unknown_rast_prim : 1;
    uint32_t dcc_decompress_gfx11 : 1;
-   uint32_t reserved : 12;
+   /* Standalone compilation lowers fragment coordinates exactly once, in its
+    * pre-pass, so the shader and the argument map built from it agree and the
+    * postprocess pass must not re-decide the shape (it would re-emit the PS
+    * state runtime selection the pre-pass already folded away). */
+   uint32_t frag_pos_already_lowered : 1;
+   uint32_t reserved : 11;
 
    struct {
       uint8_t topology;
@@ -186,6 +191,7 @@ struct radv_graphics_state_key {
    struct {
       struct radv_ps_epilog_key epilog;
       bool force_vrs_enabled;
+      bool force_dual_src_blend_swizzle;
       bool exports_mrtz_via_epilog;
       bool has_epilog;
    } ps;
@@ -564,7 +570,12 @@ struct radv_compiler_info {
       uint32_t lower_terminate_to_discard : 1;
       uint32_t no_implicit_varying_subgroup_size : 1;
       uint32_t nir_debug_info : 1;
-      uint32_t padding : 28;
+      uint32_t ps5_global_streamout : 1;
+      uint32_t ps5_fragment_view_index : 1;
+      /* PS5 only: deliver the ring descriptor table as user data instead of
+       * through the system-block ring_offsets at s0/s1. See load_ring(). */
+      uint32_t ps5_tess_ring_table : 1;
+      uint32_t padding : 25;
 
       int32_t force_aniso;
 

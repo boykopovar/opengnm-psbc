@@ -40,6 +40,17 @@ radv_postprocess_nir(const struct radv_compiler_info *compiler_info, const struc
       if (!stage->key.optimisations_disabled) {
          NIR_PASS(_, stage->nir, nir_opt_cse);
       }
+      /* A standalone caller that already lowered fragment coordinates in its
+       * own pre-pass - so the shader and the argument map built from it agree -
+       * must not have them lowered again here: the second run re-decides the
+       * shape from what the first one left and can re-emit the PS state runtime
+       * selection that the pre-pass folded away, which then reads an argument
+       * the standalone ABI does not declare. */
+      if (!gfx_state->frag_pos_already_lowered)
+         NIR_PASS(_, stage->nir, radv_nir_lower_opt_fs_frag_pos,
+                  gfx_state->vrs_may_be_enabled,
+                  gfx_state->ms.sample_shading_enable ||
+                     stage->nir->info.fs.uses_sample_shading);
       NIR_PASS(_, stage->nir, radv_nir_lower_fs_intrinsics, stage, gfx_state);
    }
 
@@ -220,6 +231,7 @@ radv_postprocess_nir(const struct radv_compiler_info *compiler_info, const struc
 
       if (!late_options.no_color_export) {
          late_options.dual_src_blend = gfx_state->ps.epilog.mrt0_is_dual_src;
+         late_options.force_dual_src_blend_swizzle = gfx_state->ps.force_dual_src_blend_swizzle;
          late_options.color_is_int8 = gfx_state->ps.epilog.color_is_int8;
          late_options.color_is_int10 = gfx_state->ps.epilog.color_is_int10;
          late_options.enable_mrt_output_nan_fixup =
