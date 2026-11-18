@@ -83,6 +83,7 @@ typedef enum {
  * packed distance registers account for; naming it keeps the semantic list and
  * the export count in agreement instead of leaving the linkage unresolved. */
 #define PSBC_SEMANTIC_VIEWPORT_INDEX 49u
+#define PSBC_SEMANTIC_RENDER_TARGET_LAYER 50u
 #define PSBC_MAX_VERTEX_ATTRIBUTES 32
 #define PSBC_MAX_DESCRIPTOR_BINDINGS 64
 #define PSBC_MAX_DESCRIPTOR_SETS 4

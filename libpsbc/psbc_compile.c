@@ -592,7 +592,8 @@ static bool build_input_semantics(const nir_shader* nir,
                     continue;
                 const nir_io_semantics io = nir_intrinsic_io_semantics(intrin);
                 const bool primitive_id = io.location == VARYING_SLOT_PRIMITIVE_ID;
-                if (primitive_id && (io.num_slots != 1 || mode != 1))
+                const bool layer = io.location == VARYING_SLOT_LAYER;
+                if ((primitive_id || layer) && (io.num_slots != 1 || mode != 1))
                     return false;
                 /* A distance the PIXEL stage reads is a packed position
                  * register: the rasterizer interpolates it like a varying and
@@ -635,17 +636,18 @@ static bool build_input_semantics(const nir_shader* nir,
                     seen[attribute] = true;
                     continue;
                 }
-                if (!primitive_id && io.location < VARYING_SLOT_VAR0)
+                if (!primitive_id && !layer && io.location < VARYING_SLOT_VAR0)
                     continue;
                 for (uint32_t slot = 0; slot < io.num_slots; ++slot) {
                     const uint32_t location =
-                        primitive_id ? 0 : io.location - VARYING_SLOT_VAR0 + slot;
+                        primitive_id || layer ? 0 : io.location - VARYING_SLOT_VAR0 + slot;
                     const uint32_t attribute =
                         nir_intrinsic_base(intrin) + slot;
                     if (location >= PSBC_MAX_SEMANTICS ||
                         attribute >= generic_count)
                         return false;
-                    uint32_t word = primitive_id ? PSBC_SEMANTIC_PRIMITIVE_ID : 15u + location;
+                    uint32_t word = primitive_id ? PSBC_SEMANTIC_PRIMITIVE_ID :
+                        (layer ? PSBC_SEMANTIC_RENDER_TARGET_LAYER : 15u + location);
                     if (mode == 1 && !(primitive_id && primitive_id_per_primitive))
                         word |= BITFIELD_BIT(22);
                     if (seen[attribute] &&
@@ -694,6 +696,13 @@ static bool fill_output_semantics(const struct radv_shader_info* info,
      * whole linkage field stays unresolved and the pair is refused, which is
      * exactly the shape the viewport-routing witness hit. A pipeline that does
      * not write it is byte-identical to before, because this emits nothing. */
+    const uint8_t layer = info->outinfo.vs_output_param_offset[VARYING_SLOT_LAYER];
+    if (layer < PSBC_MAX_SEMANTICS) {
+        if (metadata->output_semantic_count >= PSBC_MAX_SEMANTICS)
+            return false;
+        metadata->output_semantics[metadata->output_semantic_count++] =
+            PSBC_SEMANTIC_RENDER_TARGET_LAYER | ((uint32_t)layer << 8);
+    }
     const uint8_t viewport_index =
         info->outinfo.vs_output_param_offset[VARYING_SLOT_VIEWPORT];
     if (viewport_index < PSBC_MAX_SEMANTICS) {
