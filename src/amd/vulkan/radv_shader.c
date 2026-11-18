@@ -549,11 +549,12 @@ radv_shader_spirv_to_nir(const struct radv_compiler_info *compiler_info, struct 
       };
       nir = spirv_to_nir(spirv, stage->spirv.size / 4, spec, stage->stage, stage->entrypoint, &spirv_options,
                          &compiler_info->nir_options[stage->stage]);
+      vtn_free_specialization(spec);
+      if (!nir)
+         return NULL;
       nir->info.internal |= is_internal;
       assert(nir->info.stage == stage->stage);
       nir_validate_shader(nir, "after spirv_to_nir");
-
-      vtn_free_specialization(spec);
 
       const struct nir_lower_sysvals_to_varyings_options sysvals_to_varyings = {
          .point_coord = true,

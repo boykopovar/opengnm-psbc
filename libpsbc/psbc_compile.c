@@ -2818,6 +2818,9 @@ static PsbcResult psbc_compile_impl(
     compiler_info.spirv_caps.MultiView = opts->target == PSBC_TARGET_PS5 &&
         (mesa_stage == MESA_SHADER_VERTEX || mesa_stage == MESA_SHADER_FRAGMENT);
     compiler_info.spirv_caps.Geometry = true;
+    compiler_info.spirv_caps.ShaderViewportIndexLayerEXT = opts->target == PSBC_TARGET_PS5;
+    compiler_info.spirv_caps.ShaderLayer = opts->target == PSBC_TARGET_PS5;
+    compiler_info.spirv_caps.ShaderViewportIndex = opts->target == PSBC_TARGET_PS5;
     compiler_info.spirv_caps.TransformFeedback = true;
     compiler_info.spirv_caps.DotProduct = true;
     compiler_info.spirv_caps.DotProductInput4x8BitPacked = true;
