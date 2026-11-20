@@ -3882,6 +3882,8 @@ static PsbcResult psbc_compile_impl(
         return PSBC_RESULT_INTERNAL_ERROR;
     }
     NIR_PASS(_, nir, nir_opt_licm, psbc_licm_speculatable);
+    NIR_PASS(_, nir, nir_remove_dead_variables, nir_var_function_temp, NULL);
+    NIR_PASS(_, nir, nir_opt_dce);
     debug_stage("postprocess-end");
     debug_shader_io("postprocess", nir, &stage.info);
     if (getenv("PSBC_DEBUG_NIR"))
