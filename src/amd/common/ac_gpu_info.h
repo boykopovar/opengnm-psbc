@@ -127,6 +127,7 @@ struct ac_compiler_info {
    /* Whether image_sample* instructions can be either a sampler or no-sampler access.*/
    uint32_t has_point_sample_accel : 1;
    uint32_t has_fast_fma32 : 1;
+   uint32_t has_buffer_scratch : 1;
    /* Whether chips support fused v_fma_mix* instructions.
     * Otherwise, unfused v_mad_mix* is available on GFX9.
     */

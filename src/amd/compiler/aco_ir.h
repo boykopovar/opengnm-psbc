@@ -2296,6 +2296,7 @@ struct DeviceInfo {
    uint16_t max_waves_per_simd;
    unsigned simd_per_cu;
    bool has_fast_fma32 = false;
+   bool has_flat_scratch = false;
    bool has_mac_legacy32 = false;
    bool has_fmac_legacy32 = false;
    bool has_mad32 = false;

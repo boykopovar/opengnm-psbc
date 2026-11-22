@@ -2255,6 +2255,7 @@ static PsbcResult buildshaderbinary(
 static void setup_ac_info(struct ac_compiler_info* ac_info, enum amd_gfx_level gfxlevel) {
     ac_info->gfx_level = gfxlevel;
     ac_info->has_fast_fma32 = gfxlevel >= GFX9;
+    ac_info->has_buffer_scratch = gfxlevel == GFX10_3;
     ac_info->lds_size_per_workgroup = gfxlevel >= GFX7 ? 64 * 1024 : 32 * 1024;
 
     if (gfxlevel >= GFX10_3) {

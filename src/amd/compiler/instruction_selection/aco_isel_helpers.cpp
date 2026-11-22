@@ -784,7 +784,7 @@ add_startpgm(struct isel_context* ctx, bool is_callee)
 
    /* epilog has no scratch */
    if (ctx->args->scratch_offset.used) {
-      if (ctx->program->gfx_level < GFX9) {
+      if (!ctx->program->dev.has_flat_scratch) {
          /* Stash these in the program so that they can be accessed later when
           * handling spilling.
           */
@@ -1119,7 +1119,7 @@ find_param_regs(Program* program, const ABI& abi, callee_info& info,
 }
 
 struct callee_info
-get_callee_info(amd_gfx_level gfx_level, unsigned wave_size, const ABI& abi, unsigned param_count,
+get_callee_info(bool has_flat_scratch, unsigned wave_size, const ABI& abi, unsigned param_count,
                 const nir_parameter* parameters, Program* program, RegisterDemand reg_limit,
                 const param_assignment_hints& param_hints)
 {
@@ -1146,7 +1146,7 @@ get_callee_info(amd_gfx_level gfx_level, unsigned wave_size, const ABI& abi, uns
    return_def_info.force_reg = true;
    assignment_infos.push_back(return_def_info);
 
-   if (gfx_level >= GFX9) {
+   if (has_flat_scratch) {
       Temp stack_ptr = program ? program->allocateTmp(s1) : Temp();
       Definition stack_def = Definition(stack_ptr);
       info.stack_ptr = {};

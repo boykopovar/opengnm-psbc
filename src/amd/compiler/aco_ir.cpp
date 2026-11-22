@@ -116,6 +116,7 @@ init_program(Program* program, Stage stage, const struct aco_shader_info* info,
    program->dev.has_gfx6_mrt_export_bug = options->compiler_info->has_gfx6_mrt_export_bug;
 
    program->dev.has_fast_fma32 = options->compiler_info->has_fast_fma32;
+   program->dev.has_flat_scratch = program->gfx_level >= GFX9 && !options->compiler_info->has_buffer_scratch;
    program->dev.has_mac_legacy32 = program->gfx_level <= GFX7 || program->gfx_level == GFX10;
    program->dev.has_fmac_legacy32 = program->gfx_level >= GFX10_3 && program->gfx_level < GFX12;
    program->dev.fused_mad_mix = options->compiler_info->has_fma_mix;
